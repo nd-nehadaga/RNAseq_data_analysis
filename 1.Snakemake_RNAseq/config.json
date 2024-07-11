@@ -1,0 +1,64 @@
+{
+
+      "par_general":
+      {
+        "indir": "/path/to/directory/with/fastq/files/",
+        "outdir" : "path/to/output/directory/"
+      },
+
+      "wildcard_pattern":
+      {
+        "fastq_input" : "_fastq.gz" ,
+        "pair1_input" : "_rnaseq_pair1_fastq.gz",
+        "pair2_input" : "_rnaseq_pair2_fastq.gz",
+        "fastqc_bt" : "_fastq_fastqc.zip",
+        "fastqc_at" : "_fastqc.zip"
+      },
+
+    "executables":
+      {
+        "java_exec"       : "java-8",
+        "bowtie2_exec"    : "bowtie2",
+        "Trimmomatic_exec": "/path/to/trimmomatic.jar",
+        "fastqc_exec"     : "fastqc",
+        "samtools_exec"   : "samtools",
+        "picardtoolsJar"  : "/path/to/picard.jar",
+        "macs2_exec"       : "macs2",
+        "STAR_exec" : "/path/to/aligner/STAR"
+      },
+    "additionalInputFiles":
+      {
+        "trim_adaptor_file" : "/path/to/trimadapter_file/TruSeq3-SE.fa"
+
+      },
+
+    "par_trimming":
+      {
+        "trimmomatic_mode"  : "PE",
+        "trimmomatic_ILLUMINACLIP"  : "2:30:10",
+        "trimmomatic_trailing"      : 3,
+        "trimmomatic_leading"       : 3,
+        "trimmomatic_minlen"        : 36,
+        "trimmomatic_sliding_window" : "4:15",
+        "trimmomatic_adapters" : "/path/to/trimadapter_paired_file/TruSeq3-PE-2.fa"
+
+      },
+
+    "par_align":
+    {
+        "bowtie2_sensitivity"   : "--very-sensitive",
+        "bowtie2_refGenome"     : "/g/scb2/zaugg/daga/Downloads_data_file/GRCh38/hg_38_bowtie2_index/",
+        "STARGENOMELOC" : "/path/to/referenceGenome/"
+
+      },
+
+    "par_postalign":
+    {
+        "minMAPQscore"                       : 10,
+        "ValidationStringencySortSam"        : "LENIENT",
+        "ValidationStringencyMarkDuplicates" : "SILENT"
+      }
+
+
+
+}

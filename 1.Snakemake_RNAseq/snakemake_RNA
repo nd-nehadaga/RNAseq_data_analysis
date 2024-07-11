@@ -1,0 +1,284 @@
+import os, sys
+import glob
+
+# DIRECTORIES AND VARIABLES #
+
+ROOT_dir        = config["par_general"]["outdir"]
+input_dir = config["par_general"]["indir"]
+FASTQC_BT_dir   = ROOT_dir + "/1.FastQC_beforeTrimming"
+TRIM_dir        = ROOT_dir + "/2.Trimming"
+FASTQC_AT_dir   = ROOT_dir + "/3.FastQC_afterTrimming"
+ALIGN_dir       = ROOT_dir + "/4.Alignment"
+BAM_s_dir   = ROOT_dir + "/5.BAM_s"
+BAM_s_mapped_dir = ROOT_dir + "/6.BAM_s_mapped"
+#BAM_s_mapped_dups_rm_dir = ROOT_dir + "/7.BAM_s_mapped_dups_rm"
+BAM_s_mapped_dups_rm_unique_dir = ROOT_dir + "/8.BAM_s_mapped_dups_rm_unique"
+Post_align_stat_dir = ROOT_dir + "/9.Post_align_stat"
+
+LOG_BENCHMARK_dir  = ROOT_dir + "/Logs_and_Benchmarks"
+
+
+
+########### Executables
+
+fastqc_exec = config["executables"]["fastqc_exec"]
+trimmomatic_exec = config["executables"]["Trimmomatic_exec"]
+picardtoolsJar   = config["executables"]["picardtoolsJar"]
+
+# parameters
+######################
+# CREATE DIRECTORIES #
+######################
+
+#if not os.path.isdir(FASTQC_BT_dir):   makedirs(FASTQC_BT_dir)
+#if not os.path.isdir(FASTQC_AT_dir):   makedirs(FASTQC_AT_dir)
+#if not os.path.isdir(ALIGN_dir):       makedirs(ALIGN_dir)
+
+
+
+####### Wildcard patters
+fastq_file_pattern = config["wildcard_pattern"]["fastq_input"]
+fastq_file_pattern_no_ext = fastq_file_pattern.rstrip(".gz")
+fastqc_bt_pattern = config["wildcard_pattern"]["fastqc_bt"]
+fastqc_at_pattern = config["wildcard_pattern"]["fastqc_at"]
+
+pair1_input_pattern = config["wildcard_pattern"]["pair1_input"]
+pair2_input_pattern = config["wildcard_pattern"]["pair2_input"]
+
+############# To get all the samples
+sample_regex_full = input_dir + "/" + "{sample}" + fastq_file_pattern
+sample_list, = glob_wildcards(sample_regex_full)
+
+
+sample_regex_full_1 = input_dir + "/" + "{sample_1}" + "_rnaseq_pair1_fastq.gz"
+sample_list_1, = glob_wildcards(sample_regex_full_1)
+trim_suffix_pattern = ["_1P.gz","_2P.gz","_1U.gz","_2U.gz"]
+trim_suffix_pattern_noext = ["_1P","_2P","_1U","_2U"]
+
+
+
+######### Number of threads
+
+threadsMax = 16
+thereadMin = 1
+
+
+##################### All rules
+
+
+rule all:
+    input:
+        expand("{dir}/{sample_1}_stat.txt", dir = Post_align_stat_dir,sample_1 = sample_list_1),
+
+        expand("{dir}/{sample_1}{pattern_in}{pattern_trim}{pattern_at}",dir = FASTQC_AT_dir, \
+        pattern_in = fastq_file_pattern_no_ext, pattern_at = fastqc_at_pattern,pattern_trim = trim_suffix_pattern_noext,\
+        sample_1 = sample_list_1),
+
+        expand("{dir}/{sample}{pattern_bt}", dir = FASTQC_BT_dir, pattern_bt = fastqc_bt_pattern,sample = sample_list)
+
+
+rule run_fastqc_bt:
+    input:
+        fastq_file = expand("{dir}/{{sample}}{pattern_in}", dir = input_dir, pattern_in = fastq_file_pattern)
+
+    output:
+        expand("{dir}/{{sample}}{pattern_bt}", dir = FASTQC_BT_dir, pattern_bt = fastqc_bt_pattern)
+
+    log:
+        expand("{dir}/fastqc_BT/{{sample}}.log", dir = LOG_BENCHMARK_dir)
+    message:
+        "Perform FASTQC on the samples {input.fastq_file:q} before trimming..."
+
+    threads: threadsMax
+
+    shell:
+        """fastqc -o {FASTQC_BT_dir:q} -t {threads} {input.fastq_file:q} 2> {log:q}"""
+
+rule trimmomatic_adapters:
+    input:
+        fastq_file_1 = expand("{dir}/{{sample_1}}{pattern_in}", dir = input_dir, pattern_in = pair1_input_pattern),
+        fastq_file_2 = expand("{dir}/{{sample_1}}{pattern_in}", dir = input_dir, pattern_in = pair2_input_pattern)
+
+    output:
+        expand("{dir}/{{sample_1}}{pattern_in}{trim_suffix}", dir = TRIM_dir, \
+        pattern_in = fastq_file_pattern_no_ext,trim_suffix = trim_suffix_pattern)
+
+    log:
+        expand("{dir}/fastq_trim/{{sample_1}}.log", dir = LOG_BENCHMARK_dir)
+    message:
+        "Perform trimming on the samples {wildcards.sample_1} ..."
+
+    threads: threadsMax
+
+    params:
+        mode = config["par_trimming"]["trimmomatic_mode"],
+        ILLUMINACLIP = config["par_trimming"]["trimmomatic_ILLUMINACLIP"],
+        trailing     = config["par_trimming"]["trimmomatic_trailing"],
+        leading = config["par_trimming"]["trimmomatic_leading"],
+        sliding_window = config["par_trimming"]["trimmomatic_sliding_window"],
+        minlen       = config["par_trimming"]["trimmomatic_minlen"],
+        adapters     = config["par_trimming"]["trimmomatic_adapters"]
+        #base_out = "{wildcards.sample}"
+
+    shell:
+        """ java -jar {trimmomatic_exec} {params.mode} \
+                -threads {threads}  \
+                {input.fastq_file_1} {input.fastq_file_2}\
+                -baseout {TRIM_dir}/{wildcards.sample_1}{fastq_file_pattern} \
+                ILLUMINACLIP:{params.adapters}:{params.ILLUMINACLIP}  \
+                LEADING:{params.leading}\
+                TRAILING:{params.trailing}  \
+                SLIDINGWINDOW:{params.sliding_window} \
+                MINLEN:{params.minlen}  \
+                2>{log:q} """
+
+rule run_fastqc_at:
+    input:
+        expand("{dir}/{{sample_1}}{pattern_in}{trim_suffix}",dir = TRIM_dir, pattern_in = fastq_file_pattern_no_ext,trim_suffix = trim_suffix_pattern)
+
+    output:
+        expand("{dir}/{{sample_1}}{pattern_in}{pattern_trim}{pattern_at}",dir = FASTQC_AT_dir, \
+        pattern_in = fastq_file_pattern_no_ext, pattern_at = fastqc_at_pattern,pattern_trim = trim_suffix_pattern_noext)
+
+    log:
+        expand("{dir}/fastqc_AT/{{sample_1}}.log", dir = LOG_BENCHMARK_dir)
+    message:
+        "Perform FASTQC on the samples {input:q} after trimming..."
+
+    threads: threadsMax
+
+    shell:
+        """fastqc -o {FASTQC_AT_dir:q} -t {threads} {input} 2> {log:q}"""
+
+
+rule alignment:
+    input:
+        r1 = expand("{dir}/{{sample_1}}{pattern_in}_1P.gz", dir = TRIM_dir ,pattern_in = fastq_file_pattern_no_ext),
+        r2 = expand("{dir}/{{sample_1}}{pattern_in}_2P.gz", dir = TRIM_dir ,pattern_in = fastq_file_pattern_no_ext)
+
+    output:
+        aligned_bam = expand("{dir}/{{sample_1}}_Aligned.out.bam", dir = ALIGN_dir)
+
+    threads: threadsMax
+    params:
+        GENOMELOC = config["par_align"]["STARGENOMELOC"],
+    log:
+        expand("{dir}/alignment/{{sample_1}}.log", dir = LOG_BENCHMARK_dir)
+
+    message:
+        "Do alignment for files {input.r1:q} with STAR. This may take a while..."
+
+
+    shell:
+             """ STAR \
+    --runThreadN {threads} \
+    --genomeDir {params.GENOMELOC} \
+    --readFilesCommand zcat \
+    --readFilesIn {input.r1} {input.r2} \
+    --outFileNamePrefix {ALIGN_dir}/{wildcards.sample_1}_ \
+    --outSAMtype BAM Unsorted
+     2>{log:q} """
+
+
+rule sort_bamfile:
+    input:
+        rules.alignment.output.aligned_bam
+    output:
+        bam_s = expand("{dir}/{{sample_1}}_s.bam", dir = BAM_s_dir),
+        index = expand("{dir}/{{sample_1}}_s.bam.bai", dir = BAM_s_dir)
+
+    threads: threadsMax
+    log:
+        expand("{dir}/bam_s/{{sample_1}}.log", dir = LOG_BENCHMARK_dir)
+
+    message:
+        "Sorting bam file {input:q}. This may take a while..."
+
+    shell:
+        """samtools sort --threads {threadsMax} -o {output.bam_s} {input} 2> {log:q} &&
+        samtools index {output.bam_s} """
+
+
+
+rule postalign_samtools_flagstat:
+    input:
+        rules.sort_bamfile.output.bam_s
+    output:
+        stats = expand("{dir}/flagstat/{{sample_1}}_s.stats", dir = Post_align_stat_dir)
+    log:
+    message:
+        "Run samtools flagstat on file {input:q} ..."
+    threads: 1
+    params:
+    shell:
+        """ samtools flagstat {input:q} > {output.stats:q} """
+
+
+rule to_retain_mapped_reads:
+    input:
+        s_bam = rules.sort_bamfile.output.bam_s,
+        report1 = rules.postalign_samtools_flagstat.output
+
+    output:
+        bam_mapped = expand("{dir}/{{sample_1}}_s_mapped.bam", dir = BAM_s_mapped_dir),
+        index = expand("{dir}/{{sample_1}}_s_mapped.bam.bai", dir = BAM_s_mapped_dir)
+
+
+    log:
+        expand("{dir}/s_mapped/{{sample_1}}.log", dir = LOG_BENCHMARK_dir)
+
+    threads: threadsMax
+    message:
+        "Retain only mapped reads in correct pairs {input.s_bam:q} ..."
+    params:
+
+    shell:
+        """ samtools view -f2 --threads {threads} \
+        -o {output.bam_mapped} -b {input.s_bam}  &&
+        samtools index {output.bam_mapped} """
+
+
+
+
+rule to_retain_uniquely_mapped_reads:
+     input:
+         s_bam_mapped_dups_rm = rules.to_retain_mapped_reads.output.bam_mapped
+     output:
+         bam_unique_mapped = expand("{dir}/{{sample_1}}_s_bam_mapped_dups_rm_unique.bam", dir = BAM_s_mapped_dups_rm_unique_dir),
+         index = expand("{dir}/{{sample_1}}_s_bam_mapped_dups_rm_unique.bam.bai", dir = BAM_s_mapped_dups_rm_unique_dir)
+
+
+     log:
+         expand("{dir}/unique_mapped/{{sample_1}}.log", dir = LOG_BENCHMARK_dir)
+
+     threads: threadsMax
+     message:
+         "Retain only uniquely mapped reads {input.s_bam_mapped_dups_rm:q} ..."
+     params:
+
+     shell:
+         """ samtools view -q255 --threads {threads} \
+         -o {output.bam_unique_mapped} -b {input.s_bam_mapped_dups_rm}  &&
+         samtools index {output.bam_unique_mapped} """
+
+
+
+rule stats:
+    input:
+        bam_1 = rules.sort_bamfile.output.bam_s,
+        bam_2 = rules.to_retain_mapped_reads.output.bam_mapped,
+        bam_3 = rules.to_retain_uniquely_mapped_reads.output.bam_unique_mapped
+
+    output:
+        post_align_stat = expand("{dir}/{{sample_1}}_stat.txt", dir = Post_align_stat_dir)
+
+    log:
+        expand("{dir}/post_align_stat_dir/{{sample_1}}.log", dir = LOG_BENCHMARK_dir)
+
+    threads: threadsMax
+    message:
+        "stat file under preparation ..."
+    shell:
+        """ samtools view  --threads {threads} -c {input.bam_1} >> {output.post_align_stat} &&
+        samtools view  --threads {threads} -c {input.bam_2} >> {output.post_align_stat} &&
+        samtools view  --threads {threads} -c {input.bam_3} >> {output.post_align_stat} """

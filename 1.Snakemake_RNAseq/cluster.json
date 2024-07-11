@@ -1,0 +1,29 @@
+{
+    "__default__" :
+    {
+        "queueSLURM": "htc",
+        "group"     : "group_name",
+        "nCPUs"     : "{threads}",
+        "memory"    : 35000,
+        "maxTime"   : "24:00:00",
+        "name"      : "HC_rnaseq.{rule}.{wildcards}",
+        "output"    : "/path/to/Logs_and_Benchmarks/{rule}.{wildcards}.out",
+        "error"     : "/path/to/Logs_and_Benchmarks/Logs_and_Benchmarks/{rule}.{wildcards}.err"
+    },
+
+    "alignment" :
+    {
+        "queueSLURM": "htc",
+        "maxTime"   :"24:00:00",
+        "memory"    : 40000
+    },
+
+    "sort_bamfile" :
+    {
+        "queueSLURM": "htc",
+        "maxTime"   :"24:00:00",
+        "memory"    : 50000
+
+    }
+
+}
